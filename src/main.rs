@@ -2,7 +2,11 @@ use anyhow::Result;
 use chrono::Local;
 use clap::Parser;
 use once_cell::sync::Lazy;
+use std::net::TcpStream;
+use std::sync::Mutex;
 use std::{fs, io::Write};
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{client, WebSocket};
 
 mod serial_per_line;
 use serial_per_line::SerialPerLine;
@@ -23,6 +27,11 @@ struct Args {
 }
 
 static ARGS: Lazy<Args> = Lazy::new(|| Args::parse());
+
+static SOCKET: Lazy<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>> = Lazy::new(|| {
+    let (socket, _) = client::connect("ws://localhost:5000/rx").unwrap();
+    Mutex::new(socket)
+});
 
 fn main() -> Result<()> {
     let port = serialport::new(ARGS.port.clone(), ARGS.baud)
@@ -58,5 +67,13 @@ fn process_line(line: &String, file: &mut Option<fs::File>) -> Result<()> {
             file.write_all(b"\n")?;
         }
     }
+
+    // リアルタイムで
+    if let Ok(_) = SOCKET
+        .lock()
+        .unwrap()
+        .write_message(tungstenite::Message::Text(line.clone()))
+    {}
+
     Ok(())
 }
